@@ -23,6 +23,7 @@ while True:
     while not temp_humidity_read.is_valid():
         temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
 
+    print(temp_humidity_read)
     print("Temperature:")
     print(temp_humidity_read.temperature)
 
