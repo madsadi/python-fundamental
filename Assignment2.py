@@ -185,19 +185,25 @@ def AQI():
         two_point_five_AQI.append(calculate_AQI('PM2.5', value))
 
     max_AQI = np.amax(np.array([ten_AQI, two_point_five_AQI]), axis=0)
-
-    # for i in range(len(max_AQI)):
-    my_channel.update({'field1': str(two_point_five_AQI),'field2': str(ten_AQI),'field3': str(max_AQI)})
+    for value in max_AQI:
+        my_channel.update({'field3': value})
+        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+    for value in two_point_five_AQI:
+        my_channel.update({'field1': value})
+        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+    for value in ten_AQI:
+        my_channel.update({'field2': value})
+        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
 
 AQI()
 
 while True:
     temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
-    #
-    # while not temp_humidity_read.is_valid():
-    #     temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
-    #
-    # update_buffer(temp_humidity_read)
-    # plot(temp,'Temperature (C)','green','dotted')
-    # plot(humidity,'Humidity','navy','dotted')
+
+    while not temp_humidity_read.is_valid():
+        temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
+
+    update_buffer(temp_humidity_read)
+    plot(temp,'Temperature (C)','green','dotted')
+    plot(humidity,'Humidity','navy','dotted')
 
