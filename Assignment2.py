@@ -6,6 +6,9 @@ import thingspeak # -> import thingspeak
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+from luma.led_matrix.device import max7219 # <-- MAX7219 device
+from luma.core.interface.serial import spi, noop # <-- SPI interface
+from luma.core.render import canvas # <-- Canvas for drawing
 
 channel_id=343018
 channel = thingspeak.Channel(id=channel_id)
@@ -15,8 +18,22 @@ write_api_key = 'WDPU0U3DEW5GBPC2'
 read_api_key = 'Q76IR3KHD2RV4Q2A'
 my_channel = thingspeak.Channel(id=my_channel_id, api_key=write_api_key)
 
-RPI.setmode(RPI.BCM) # --> setting numbering system for GPIOs
+# Pin setup
+left_button_pin = 25
+right_button_pin = 19
+
+current_measurement_index = 0
+measurement_list=['PM1','PM2.5','PM10','Temperature','Humidity']
+spi_connection = spi(port=0, device=1, gpio=noop())  # <- setup of SPI
+led_driver = max7219(spi_connection, cascaded=1, block_orientation=90, rotate=0)  # <- Max7219
 my_dht11 = dht11.DHT11(pin=4)  # --> creating an instance for DHT11 usage
+
+def init():
+    RPI.setmode(RPI.BCM) # --> setting numbering system for GPIOs
+    RPI.setup(left_button_pin, RPI.IN, pull_up_down=RPI.PUD_UP)
+    RPI.setup(right_button_pin, RPI.IN, pull_up_down=RPI.PUD_UP)
+    with canvas(led_driver) as draw:
+            draw.point([0, 0], fill="white")
 
 def get_each_field():
     all_data = json.loads(channel.get())
@@ -185,25 +202,55 @@ def AQI():
         two_point_five_AQI.append(calculate_AQI('PM2.5', value))
 
     max_AQI = np.amax(np.array([ten_AQI, two_point_five_AQI]), axis=0)
-    for value in max_AQI:
-        my_channel.update({'field3': value})
-        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
-    for value in two_point_five_AQI:
-        my_channel.update({'field1': value})
-        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
-    for value in ten_AQI:
-        my_channel.update({'field2': value})
-        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+    # for value in max_AQI:
+    #     my_channel.update({'field3': value})
+    #     time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+    # for value in two_point_five_AQI:
+    #     my_channel.update({'field1': value})
+    #     time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+    # for value in ten_AQI:
+    #     my_channel.update({'field2': value})
+    #     time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
 
 AQI()
+init()
+
+def left_button():
+    global current_measurement_index
+    with canvas(led_driver) as draw:
+        if current_measurement_index-1>=0:
+            current_measurement_index -= 1
+            draw.point([current_measurement_index-1,0], fill="white")
+        else:
+            current_measurement_index = len(measurement_list)-1
+            draw.point([len(measurement_list)-1,0], fill="white")
+
+def right_button():
+    global current_measurement_index
+    with canvas(led_driver) as draw:
+        if current_measurement_index+1<len(measurement_list):
+            current_measurement_index += 1
+            draw.point([current_measurement_index+1,0], fill="white")
+        else:
+            current_measurement_index = 0
+            draw.point([0,0], fill="white")
 
 while True:
-    temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
+    # temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
+    #
+    # while not temp_humidity_read.is_valid():
+    #     temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
 
-    while not temp_humidity_read.is_valid():
-        temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
+    if not RPI.input(left_button_pin):
+        print('left_button')
+        left_button()
+    elif not RPI.input(right_button_pin):
+        print('right_button')
+        right_button()
 
-    update_buffer(temp_humidity_read)
-    plot(temp,'Temperature (C)','green','dotted')
-    plot(humidity,'Humidity','navy','dotted')
+    time.sleep(0.1)
+
+    # update_buffer(temp_humidity_read)
+    # plot(temp,'Temperature (C)','green','dotted')
+    # plot(humidity,'Humidity','navy','dotted')
 
