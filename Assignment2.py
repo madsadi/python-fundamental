@@ -21,19 +21,14 @@ my_channel = thingspeak.Channel(id=my_channel_id, api_key=write_api_key)
 # Pin setup
 left_button_pin = 25
 right_button_pin = 19
+button_pressed = 0
 
 current_measurement_index = 0
-measurement_list=['PM1','PM2.5','PM10','Temperature','Humidity']
+measurement_list=[{'title':'PM1','field':'field5'}, {'title':'PM2.5','field':'field3'}, {'title':'PM10','field':'field1'},
+                  {'title':'Temperature','field':'field6'}, {'title':'Humidity','field':'field7'}]
 spi_connection = spi(port=0, device=1, gpio=noop())  # <- setup of SPI
 led_driver = max7219(spi_connection, cascaded=1, block_orientation=90, rotate=0)  # <- Max7219
 my_dht11 = dht11.DHT11(pin=4)  # --> creating an instance for DHT11 usage
-
-def init():
-    RPI.setmode(RPI.BCM) # --> setting numbering system for GPIOs
-    RPI.setup(left_button_pin, RPI.IN, pull_up_down=RPI.PUD_UP)
-    RPI.setup(right_button_pin, RPI.IN, pull_up_down=RPI.PUD_UP)
-    with canvas(led_driver) as draw:
-            draw.point([0, 0], fill="white")
 
 def get_each_field():
     all_data = json.loads(channel.get())
@@ -202,55 +197,102 @@ def AQI():
         two_point_five_AQI.append(calculate_AQI('PM2.5', value))
 
     max_AQI = np.amax(np.array([ten_AQI, two_point_five_AQI]), axis=0)
-    # for value in max_AQI:
-    #     my_channel.update({'field3': value})
-    #     time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
-    # for value in two_point_five_AQI:
-    #     my_channel.update({'field1': value})
-    #     time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
-    # for value in ten_AQI:
-    #     my_channel.update({'field2': value})
-    #     time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+    for value in max_AQI:
+        my_channel.update({'field3': value})
+        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+    for value in two_point_five_AQI:
+        my_channel.update({'field1': value})
+        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+    for value in ten_AQI:
+        my_channel.update({'field2': value})
+        time.sleep(15) # wait for 15 second because of thingspeak limitation of updating data
+
+def init():
+    RPI.setmode(RPI.BCM) # --> setting numbering system for GPIOs
+    RPI.setup(left_button_pin, RPI.IN, pull_up_down=RPI.PUD_UP)
+    RPI.setup(right_button_pin, RPI.IN, pull_up_down=RPI.PUD_UP)
+    with canvas(led_driver) as draw:
+            draw.point([0, 0], fill="white")
+    visualise_graphically()
+
+
+
+def display_mean_value():
+    data = get_each_field()
+    mean_value = np.mean(data[measurement_list[current_measurement_index]['field']])
+    my_7SD = SevenSegment.SevenSegment(address=0x70)
+    my_7SD.begin()
+    my_7SD.print_number_str(str(mean_value))
+    my_7SD.write_display()
+
+def visualise_graphically():
+    data = get_each_field()
+    list = data[measurement_list[current_measurement_index]['field']]
+    chunk_size=13
+    split_arr = [list[i:i + chunk_size] for i in range(0, len(list), chunk_size)]
+
+    mean_list = []
+    for chunk in split_arr:
+        mean_value = np.mean(chunk)
+        mean_list.append(mean_value)
+
+    max_mean=max(mean_list)
+    min_mean=min(mean_list)
+    index=0
+
+    with canvas(led_driver) as draw:
+        for mean in mean_list:
+            if mean>0:
+                draw.point([index, (5-(mean-min_mean)/(max_mean-min_mean)*5)+2], fill="white")
+            else:
+                draw.point([index, 7], fill="white")
+            index+=1
+            draw.point([current_measurement_index, 0], fill="white")
+
+
+def select_measurement(btn):
+    global current_measurement_index
+    if btn==1:
+        with canvas(led_driver) as draw:
+            if current_measurement_index > 0:
+                current_measurement_index -= 1
+                draw.point([current_measurement_index, 0], fill="white")
+            else:
+                current_measurement_index = len(measurement_list) - 1
+                draw.point([len(measurement_list) - 1, 0], fill="white")
+        display_mean_value()
+        visualise_graphically()
+    elif btn==2:
+        with canvas(led_driver) as draw:
+            if current_measurement_index + 1 < len(measurement_list):
+                current_measurement_index += 1
+                draw.point([current_measurement_index, 0], fill="white")
+            else:
+                current_measurement_index = 0
+                draw.point([0, 0], fill="white")
+        display_mean_value()
+        visualise_graphically()
 
 AQI()
 init()
 
-def left_button():
-    global current_measurement_index
-    with canvas(led_driver) as draw:
-        if current_measurement_index-1>=0:
-            current_measurement_index -= 1
-            draw.point([current_measurement_index-1,0], fill="white")
-        else:
-            current_measurement_index = len(measurement_list)-1
-            draw.point([len(measurement_list)-1,0], fill="white")
-
-def right_button():
-    global current_measurement_index
-    with canvas(led_driver) as draw:
-        if current_measurement_index+1<len(measurement_list):
-            current_measurement_index += 1
-            draw.point([current_measurement_index+1,0], fill="white")
-        else:
-            current_measurement_index = 0
-            draw.point([0,0], fill="white")
-
 while True:
-    # temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
-    #
-    # while not temp_humidity_read.is_valid():
-    #     temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
+    temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
+
+    while not temp_humidity_read.is_valid():
+        temp_humidity_read = my_dht11.read()  # -> getting a single sensor measurement
 
     if not RPI.input(left_button_pin):
-        print('left_button')
-        left_button()
+        button_pressed = 1
     elif not RPI.input(right_button_pin):
-        print('right_button')
-        right_button()
+        button_pressed = 2
+    else:
+        button_pressed = 0
 
+    select_measurement(button_pressed)
     time.sleep(0.1)
 
-    # update_buffer(temp_humidity_read)
-    # plot(temp,'Temperature (C)','green','dotted')
-    # plot(humidity,'Humidity','navy','dotted')
+    update_buffer(temp_humidity_read)
+    plot(temp,'Temperature (C)','green','dotted')
+    plot(humidity,'Humidity','navy','dotted')
 
